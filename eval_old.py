@@ -116,7 +116,7 @@ def get_dataloader_from_path(path, model_transform, num_workers, args, sample_w_
     return dataloader
 
 
-def compute_representations(DL, model, device, args, dir_path=None, load=False):
+def compute_representations(DL, model, device, args, dir_path=None):
     """
     Load representations from disk if path exists,
     else compute image representations using the specified encoder
@@ -126,7 +126,7 @@ def compute_representations(DL, model, device, args, dir_path=None, load=False):
     """
     output_dir = args.output_dir if dir_path is None else dir_path
 
-    if load:
+    if args.load:
         print(f'Loading saved representations from: {output_dir}\n', file=sys.stderr)
         repsi = load_reps_from_path(output_dir, args.model, None, DL)
         if repsi is not None: 
@@ -141,7 +141,7 @@ def compute_representations(DL, model, device, args, dir_path=None, load=False):
     return repsi
 
 
-def compute_scores(args, reps, test_reps=None, labels=None):
+def compute_scores(args, reps, test_reps, labels=None):
 
     scores={}
     vendi_scores = None
@@ -191,6 +191,7 @@ def compute_scores(args, reps, test_reps=None, labels=None):
     except:
         pass
     
+    
     if 'authpct' in args.metrics:
         print("Computing authpct \n", file=sys.stderr)
         scores['authpct'] = compute_authpct(*reps)
@@ -199,35 +200,34 @@ def compute_scores(args, reps, test_reps=None, labels=None):
         print('Aprroximating Sliced W2.', file=sys.stderr)
         scores['sw_approx'] = sw_approx(*reps)
 
-    if test_reps is not None:
-        if 'ct' in args.metrics:
-            print("Computing ct score \n", file=sys.stderr)
-            scores['ct'] = compute_CTscore(reps[0], test_reps, reps[1])
+    if 'ct' in args.metrics:
+        print("Computing ct score \n", file=sys.stderr)
+        scores['ct'] = compute_CTscore(reps[0], test_reps, reps[1])
 
-        if 'ct_test' in args.metrics:
-            print("Computing ct score, modified to identify mode collapse only \n", file=sys.stderr)
-            scores['ct_test'] = compute_CTscore_mode(reps[0], test_reps, reps[1])
+    if 'ct_test' in args.metrics:
+        print("Computing ct score, modified to identify mode collapse only \n", file=sys.stderr)
+        scores['ct_test'] = compute_CTscore_mode(reps[0], test_reps, reps[1])
 
-        if 'ct_modified' in args.metrics:
-            print("Computing ct score, modified to identify memorization only \n", file=sys.stderr)
-            scores['ct_modified'] = compute_CTscore_mem(reps[0], test_reps, reps[1])
+    if 'ct_modified' in args.metrics:
+        print("Computing ct score, modified to identify memorization only \n", file=sys.stderr)
+        scores['ct_modified'] = compute_CTscore_mem(reps[0], test_reps, reps[1])
 
-        if 'fls' in args.metrics or 'fls_overfit' in args.metrics:
-            train_reps, gen_reps = reps[0], reps[1]
-            reduced_n = min(args.reduced_n, train_reps.shape[0]//2, test_reps.shape[0], gen_reps.shape[0])
+    if 'fls' in args.metrics or 'fls_overfit' in args.metrics:
+        train_reps, gen_reps = reps[0], reps[1]
+        reduced_n = min(args.reduced_n, train_reps.shape[0]//2, test_reps.shape[0], gen_reps.shape[0])
 
-            test_reps = test_reps[np.random.choice(test_reps.shape[0], reduced_n, replace=False)]
-            gen_reps = gen_reps[np.random.choice(gen_reps.shape[0], reduced_n, replace=False)]
+        test_reps = test_reps[np.random.choice(test_reps.shape[0], reduced_n, replace=False)]
+        gen_reps = gen_reps[np.random.choice(gen_reps.shape[0], reduced_n, replace=False)]
 
-            print("Computing fls \n", file=sys.stderr)
-            # fls must be after ot, as it changes train_reps
-            train_reps = train_reps[np.random.choice(train_reps.shape[0], 2*reduced_n, replace=False)]
-            train_reps, baseline_reps = train_reps[:reduced_n], train_reps[reduced_n:]
+        print("Computing fls \n", file=sys.stderr)
+        # fls must be after ot, as it changes train_reps
+        train_reps = train_reps[np.random.choice(train_reps.shape[0], 2*reduced_n, replace=False)]
+        train_reps, baseline_reps = train_reps[:reduced_n], train_reps[reduced_n:]
 
-            if 'fls' in args.metrics:
-                scores['fls'] = compute_fls(train_reps, baseline_reps, test_reps, gen_reps)
-            if 'fls_overfit' in args.metrics:
-                scores['fls_overfit'] = compute_fls_overfit(train_reps, baseline_reps, test_reps, gen_reps)
+        if 'fls' in args.metrics:
+            scores['fls'] = compute_fls(train_reps, baseline_reps, test_reps, gen_reps)
+        if 'fls_overfit' in args.metrics:
+            scores['fls_overfit'] = compute_fls_overfit(train_reps, baseline_reps, test_reps, gen_reps)
 
     for key, value in scores.items():
         if key=='realism': continue
@@ -311,7 +311,7 @@ def main():
     args = parser.parse_args()
 
     device, num_workers = get_device_and_num_workers(args.device, args.num_workers)
-    #print(args)
+    print(args)
 
     IS_scores = None
     if 'is' in args.metrics and args.model == 'inception':
@@ -325,7 +325,6 @@ def main():
                         sinception=True if args.model=='sinception' else False,
                         depth=args.depth,
                         )
-    print("original", args.path[0])
     dataloader_real = get_dataloader_from_path(args.path[0], model.transform, num_workers, args)
     
     print("Real train data representations")
@@ -337,23 +336,27 @@ def main():
         print("Real test data representations")
         dataloader_test = get_dataloader_from_path(args.test_path, model.transform, num_workers, args)
 
-        repsi_test = compute_representations(dataloader_test, model, device, args, dir_path=args.load_dir, load=args.load)
+        repsi_test = compute_representations(dataloader_test, model, device, args, dir_path=args.load_dir)
 
     # Loop over all generated paths
     all_scores = {}
     vendi_scores = {}
     for i, path in enumerate(args.path[1:]):
         print("Generated data representations")
-
-        outdir = args.output_dir
-        key_exp_name = path
+        # Saves baseline representations for multiple evals
+        if len(args.path) == 3 and i==1:
+            outdir = args.load_dir
+            exp_name = "baseline"
+        else:
+            outdir = args.output_dir
+            exp_name = args.exp_name
         
-        print(i, key_exp_name, outdir,"\n\n\n")
+        print(i, exp_name, outdir,"\n\n\n")
             
         dataloaderi = get_dataloader_from_path(path, model.transform, num_workers, args,
                                                sample_w_replacement=True if ':train' in path else False)
         
-        repsi = compute_representations(dataloaderi, model, device, args, dir_path=outdir, load=False)
+        repsi = compute_representations(dataloaderi, model, device, args, dir_path=outdir)
         reps = [reps_real, repsi]
 
         print(f'Computing scores between reference dataset and {path}\n', file=sys.stderr)
@@ -361,10 +364,13 @@ def main():
         if vendi_scores_i is not None:
             vendi_scores[os.path.basename(path)] = vendi_scores_i
 
+        print('Saving scores\n', file=sys.stderr)
+        save_score(
+            scores_i, args.output_dir, args.model, [args.path[0], path], None, args.nsample,
+        )
         if IS_scores is not None:
-            scores_i.update(IS_scores[f'{key_exp_name}_{i:02d}'])
-        all_scores[key_exp_name] = scores_i
-        print(all_scores)
+            scores_i.update(IS_scores[f'{exp_name}_{i:02d}'])
+        all_scores[f'{exp_name}_{i:02d}'] = scores_i
 
         if args.heatmaps:
             print('Visualizing FD gradient with gradcam\n', file=sys.stderr)
@@ -375,8 +381,12 @@ def main():
                                perturbation=args.heatmaps_perturbation, random_seed=args.seed)
     # save scores from all generated paths
     save_scores(all_scores, args, vendi_scores=vendi_scores)
-    df = pd.DataFrame.from_dict( data=all_scores ).T
-    df.round(3).to_csv(os.path.join(args.output_dir, f"scores_{args.exp_name}.csv"))
+    df = pd.DataFrame.from_dict(data=all_scores)
+   
+    if len(args.path) == 3:
+        # calculate difference betwwen the first and second column on pandas
+        df['Gain'] = df.iloc[:, 0] - df.iloc[:, 1]
     
+    df.round(2).to_csv(os.path.join(args.output_dir, 'scores.csv'))
 if __name__ == '__main__':
     main()

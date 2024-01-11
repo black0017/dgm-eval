@@ -34,3 +34,4 @@ dict_*
 *.pth
 .pytest_cache
 .pytest_cache/*
+draft*
