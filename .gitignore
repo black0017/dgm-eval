@@ -35,3 +35,4 @@ dict_*
 .pytest_cache
 .pytest_cache/*
 draft*
+*txt

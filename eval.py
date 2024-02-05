@@ -137,7 +137,7 @@ def compute_representations(DL, model, device, args, dir_path=None, load=False):
     repsi = get_representations(model, DL, device, normalized=False)
     if args.save:
         print(f'Saving representations to {args.output_dir}\n', file=sys.stderr)
-        save_outputs(args.output_dir, repsi, args.model, None, DL)
+        save_outputs(args.load_dir, repsi, args.model, None, DL)
     return repsi
 
 
@@ -317,7 +317,7 @@ def main():
     if 'is' in args.metrics and args.model == 'inception':
         # Does not require a reference dataset, so compute first.
         IS_scores = get_inception_scores(args, device, num_workers)
-       
+           
     print('Loading Model', file=sys.stderr)
     # Get train representations
     model = load_encoder(args.model, device, ckpt=None, arch=None,
